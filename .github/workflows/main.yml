@@ -1,22 +1,14 @@
-name: Test TTWars
 
-on:
-  workflow_dispatch:
+import requests
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
+url = "https://www.ttwars.com/international/calendar"
 
-    steps:
-      - uses: actions/checkout@v4
+response = requests.get(url, timeout=20)
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
+print("STATUS:", response.status_code)
+print("LENGTH:", len(response.text))
 
-      - name: Install requests
-        run: pip install requests
-
-      - name: Run test
-        run: python test.py
+for line in response.text.splitlines():
+    low = line.lower()
+    if any(x in low for x in ["api", "calendar", "event", ".json", "script"]):
+        print(line[:1000])
