@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Install Playwright
         run: |
-          python -m pip install playwright
+          python -m pip install playwright requests
           playwright install chromium
           playwright install-deps chromium
 
@@ -39,15 +39,15 @@ jobs:
               browser.close()
 
           webhook = os.environ["DISCORD_WEBHOOK"]
+          role_id = os.environ["ROLE_5000X"]
 
           response = requests.post(
               webhook,
               json={
-    "content": f"<@&{os.environ['ROLE_5000X']}> 🧪 **TTWars ALERT TEST**\nKalendar je uspješno očitan iz GitHub Actions.",
-    "allowed_mentions": {
-        "roles": [os.environ["ROLE_5000X"]]
-    }
-}
+                  "content": f"<@&{role_id}> 🧪 **TTWars ALERT TEST**\nKalendar je uspješno očitan iz GitHub Actions.",
+                  "allowed_mentions": {
+                      "roles": [role_id]
+                  }
               },
               timeout=20
           )
