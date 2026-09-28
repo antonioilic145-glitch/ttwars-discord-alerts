@@ -1,13 +1,16 @@
-import requests
+from playwright.sync_api import sync_playwright
 
 url = "https://www.ttwars.com/international/calendar"
 
-response = requests.get(url, timeout=20)
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page()
 
-print("STATUS:", response.status_code)
-print("LENGTH:", len(response.text))
+    page.goto(url, wait_until="networkidle", timeout=60000)
 
-for line in response.text.splitlines():
-    low = line.lower()
-    if any(x in low for x in ["api", "calendar", "event", ".json", "script"]):
-        print(line[:1000])
+    print("STATUS:", page.url)
+    print("TITLE:", page.title())
+    print("TEXT:")
+    print(page.locator("body").inner_text())
+
+    browser.close()
