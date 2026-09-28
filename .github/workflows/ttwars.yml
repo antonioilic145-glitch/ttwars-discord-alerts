@@ -15,8 +15,12 @@ jobs:
           playwright install-deps chromium
 
       - name: Check TTWars calendar
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           python - <<'PY'
+          import os
+          import requests
           from playwright.sync_api import sync_playwright
 
           url = "https://www.ttwars.com/international/calendar"
@@ -24,7 +28,6 @@ jobs:
           with sync_playwright() as p:
               browser = p.chromium.launch(headless=True)
               page = browser.new_page()
-
               page.goto(url, wait_until="networkidle", timeout=60000)
 
               print("URL:", page.url)
@@ -33,4 +36,17 @@ jobs:
               print(page.locator("body").inner_text())
 
               browser.close()
+
+          webhook = os.environ["DISCORD_WEBHOOK"]
+
+          response = requests.post(
+              webhook,
+              json={
+                  "content": "🧪 **TTWars ALERT TEST**\nKalendar je uspješno očitan iz GitHub Actions."
+              },
+              timeout=20
+          )
+
+          print("DISCORD STATUS:", response.status_code)
+          response.raise_for_status()
           PY
