@@ -17,6 +17,7 @@ jobs:
       - name: Check TTWars calendar
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          ROLE_5000X: ${{ secrets.ROLE_5000X }}
         run: |
           python - <<'PY'
           import os
