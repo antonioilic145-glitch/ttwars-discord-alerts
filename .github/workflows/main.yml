@@ -1,4 +1,3 @@
-
 import requests
 
 url = "https://www.ttwars.com/international/calendar"
