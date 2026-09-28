@@ -1,57 +1,189 @@
-name: TTWars Calendar Check
+name: TTWars Calendar Alerts
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ttwars-calendar-alerts
+  cancel-in-progress: true
 
 jobs:
   check:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Install Playwright
         run: |
           python -m pip install playwright requests
           playwright install chromium
           playwright install-deps chromium
 
-      - name: Check TTWars calendar
+      - name: Check TTWars calendar and send alerts
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          ROLE_5000X: ${{ secrets.ROLE_5000X }}
         run: |
           python - <<'PY'
           import os
+          import json
+          import re
           import requests
+          from pathlib import Path
           from playwright.sync_api import sync_playwright
 
-          url = "https://www.ttwars.com/international/calendar"
+          URL = "https://www.ttwars.com/international/calendar"
+          STATE_FILE = Path("ttwars_state.json")
 
+          ROLE_IDS = {
+              "50": "1554082098418290718",
+              "100": "1554082200650121318",
+              "200": "1554082242912063578",
+              "500": "1554082287572881439",
+              "5000": "1554082335249530943",
+              "10000": "1554082381030228068",
+              "20000": "1554082429319258212",
+              "80000": "1554082492284411924",
+          }
+
+          # Load already seen events
+          if STATE_FILE.exists():
+              try:
+                  state = json.loads(STATE_FILE.read_text())
+              except Exception:
+                  state = {"seen": []}
+          else:
+              state = {"seen": []}
+
+          seen = set(state.get("seen", []))
+
+          # Read TTWars calendar
           with sync_playwright() as p:
               browser = p.chromium.launch(headless=True)
               page = browser.new_page()
-              page.goto(url, wait_until="networkidle", timeout=60000)
+              page.goto(URL, wait_until="networkidle", timeout=60000)
 
-              print("URL:", page.url)
-              print("TITLE:", page.title())
-              print("----- CALENDAR PAGE -----")
-              print(page.locator("body").inner_text())
+              text = page.locator("body").inner_text()
+
+              print("TTWars calendar loaded.")
+              print(text)
 
               browser.close()
 
-          webhook = os.environ["DISCORD_WEBHOOK"]
-          role_id = os.environ["ROLE_5000X"]
+          lines = [line.strip() for line in text.splitlines() if line.strip()]
 
-          response = requests.post(
-              webhook,
-              json={
-                  "content": f"<@&{role_id}> 🧪 **TTWars ALERT TEST**\nKalendar je uspješno očitan iz GitHub Actions.",
-                  "allowed_mentions": {
-                      "roles": [role_id]
-                  }
-              },
-              timeout=20
+          events = []
+
+          # Find calendar entries by their speed line: ×200, ×5000, etc.
+          for i, line in enumerate(lines):
+              match = re.fullmatch(r"×(\d+)", line)
+
+              if not match:
+                  continue
+
+              speed = match.group(1)
+
+              # We only care about speeds for which we have Discord roles.
+              if speed not in ROLE_IDS:
+                  print(f"Ignoring unsupported speed: ×{speed}")
+                  continue
+
+              event_name = lines[i - 1] if i >= 1 else "Unknown server"
+              time_text = lines[i + 1] if i + 1 < len(lines) else ""
+
+              date_1 = lines[i + 2] if i + 2 < len(lines) else ""
+              date_2 = lines[i + 3] if i + 3 < len(lines) else ""
+
+              fingerprint = "|".join([
+                  event_name,
+                  speed,
+                  time_text,
+                  date_1,
+                  date_2
+              ])
+
+              events.append({
+                  "name": event_name,
+                  "speed": speed,
+                  "time": time_text,
+                  "date_1": date_1,
+                  "date_2": date_2,
+                  "fingerprint": fingerprint
+              })
+
+          print(f"Detected {len(events)} supported event(s).")
+
+          webhook = os.environ["DISCORD_WEBHOOK"]
+
+          new_events = []
+
+          for event in events:
+              fingerprint = event["fingerprint"]
+
+              if fingerprint in seen:
+                  print("Already seen:", fingerprint)
+                  continue
+
+              role_id = ROLE_IDS[event["speed"]]
+
+              message = (
+                  f"<@&{role_id}> 🚨 **New TTWars server!**\n\n"
+                  f"⚔️ **{event['name']}**\n"
+                  f"⚡ Speed: **×{event['speed']}**\n"
+                  f"🕐 Time: **{event['time']}**\n"
+                  f"📅 Registration: **{event['date_1']} → {event['date_2']}**\n\n"
+                  f"🔗 {URL}"
+              )
+
+              response = requests.post(
+                  webhook,
+                  json={
+                      "content": message,
+                      "allowed_mentions": {
+                          "roles": [role_id]
+                      }
+                  },
+                  timeout=20
+              )
+
+              print(
+                  f"Discord response for {event['name']} "
+                  f"(×{event['speed']}): {response.status_code}"
+              )
+
+              response.raise_for_status()
+
+              new_events.append(fingerprint)
+
+          # Save newly alerted events
+          for fingerprint in new_events:
+              seen.add(fingerprint)
+
+          STATE_FILE.write_text(
+              json.dumps(
+                  {"seen": sorted(seen)},
+                  indent=2,
+                  ensure_ascii=False
+              )
           )
 
-          print("DISCORD STATUS:", response.status_code)
-          response.raise_for_status()
+          print(f"Sent {len(new_events)} new alert(s).")
+          print(f"Remembering {len(seen)} event(s).")
           PY
+
+      - name: Save alert state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add ttwars_state.json
+
+          git diff --cached --quiet || git commit -m "Update TTWars alert state"
+
+          git push
