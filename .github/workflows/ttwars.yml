@@ -43,7 +43,11 @@ jobs:
           response = requests.post(
               webhook,
               json={
-                  "content": "🧪 **TTWars ALERT TEST**\nKalendar je uspješno očitan iz GitHub Actions."
+    "content": f"<@&{os.environ['ROLE_5000X']}> 🧪 **TTWars ALERT TEST**\nKalendar je uspješno očitan iz GitHub Actions.",
+    "allowed_mentions": {
+        "roles": [os.environ["ROLE_5000X"]]
+    }
+}
               },
               timeout=20
           )
