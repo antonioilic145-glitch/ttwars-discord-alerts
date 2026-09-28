@@ -52,7 +52,7 @@ jobs:
               "80000": "1554082492284411924",
           }
 
-          # Load already seen events
+          # Load previously seen events
           if STATE_FILE.exists():
               try:
                   state = json.loads(STATE_FILE.read_text())
@@ -63,25 +63,40 @@ jobs:
 
           seen = set(state.get("seen", []))
 
-          # Read TTWars calendar
+          print(f"Previously seen events: {len(seen)}")
+
+          # Open TTWars calendar
           with sync_playwright() as p:
               browser = p.chromium.launch(headless=True)
+
               page = browser.new_page()
-              page.goto(URL, wait_until="networkidle", timeout=60000)
+
+              page.goto(
+                  URL,
+                  wait_until="networkidle",
+                  timeout=60000
+              )
 
               text = page.locator("body").inner_text()
 
               print("TTWars calendar loaded.")
+              print("--------------------------------")
               print(text)
+              print("--------------------------------")
 
               browser.close()
 
-          lines = [line.strip() for line in text.splitlines() if line.strip()]
+          lines = [
+              line.strip()
+              for line in text.splitlines()
+              if line.strip()
+          ]
 
           events = []
 
-          # Find calendar entries by their speed line: ×200, ×5000, etc.
+          # Find events by their speed line
           for i, line in enumerate(lines):
+
               match = re.fullmatch(r"×(\d+)", line)
 
               if not match:
@@ -89,16 +104,34 @@ jobs:
 
               speed = match.group(1)
 
-              # We only care about speeds for which we have Discord roles.
+              # Ignore speeds for which we don't have a Discord role
               if speed not in ROLE_IDS:
                   print(f"Ignoring unsupported speed: ×{speed}")
                   continue
 
-              event_name = lines[i - 1] if i >= 1 else "Unknown server"
-              time_text = lines[i + 1] if i + 1 < len(lines) else ""
+              event_name = (
+                  lines[i - 1]
+                  if i >= 1
+                  else "Unknown server"
+              )
 
-              date_1 = lines[i + 2] if i + 2 < len(lines) else ""
-              date_2 = lines[i + 3] if i + 3 < len(lines) else ""
+              time_text = (
+                  lines[i + 1]
+                  if i + 1 < len(lines)
+                  else ""
+              )
+
+              date_1 = (
+                  lines[i + 2]
+                  if i + 2 < len(lines)
+                  else ""
+              )
+
+              date_2 = (
+                  lines[i + 3]
+                  if i + 3 < len(lines)
+                  else ""
+              )
 
               fingerprint = "|".join([
                   event_name,
@@ -123,11 +156,13 @@ jobs:
 
           new_events = []
 
+          # Process events
           for event in events:
+
               fingerprint = event["fingerprint"]
 
               if fingerprint in seen:
-                  print("Already seen:", fingerprint)
+                  print(f"Already alerted: {fingerprint}")
                   continue
 
               role_id = ROLE_IDS[event["speed"]]
@@ -153,21 +188,26 @@ jobs:
               )
 
               print(
-                  f"Discord response for {event['name']} "
-                  f"(×{event['speed']}): {response.status_code}"
+                  f"Discord response for "
+                  f"{event['name']} "
+                  f"(×{event['speed']}): "
+                  f"{response.status_code}"
               )
 
               response.raise_for_status()
 
               new_events.append(fingerprint)
 
-          # Save newly alerted events
+          # Add newly alerted events to state
           for fingerprint in new_events:
               seen.add(fingerprint)
 
+          # Save state
           STATE_FILE.write_text(
               json.dumps(
-                  {"seen": sorted(seen)},
+                  {
+                      "seen": sorted(seen)
+                  },
                   indent=2,
                   ensure_ascii=False
               )
@@ -177,10 +217,10 @@ jobs:
           print(f"Remembering {len(seen)} event(s).")
           PY
 
-            - name: Save alert state
+      - name: Save alert state
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add ttwars_state.json
 
